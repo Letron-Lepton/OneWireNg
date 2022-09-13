@@ -15,58 +15,59 @@
 
 #include "OneWireNg_Config.h"
 #ifdef ARDUINO
-# include "Arduino.h"
+#include "Arduino.h"
 #elif defined(IDF_VER)
-# include "esp_attr.h"
-# include "sdkconfig.h"
-# include "freertos/FreeRTOS.h"
+#include "esp_attr.h"
+#include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
 #elif defined(__MBED__)
-# include "mbed.h"
+#include "mbed.h"
 #endif
 
 #if CONFIG_BITBANG_DELAY_CCOUNT
-# if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32H2)
-#  include "hal/cpu_hal.h"
-#  define get_cpu_cycle_count() cpu_hal_get_cycle_count()
-# elif defined(ARDUINO_ARCH_ESP8266) || defined(ARDUINO_ARCH_ESP32) || defined(IDF_VER)
+#if defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32H2)
+#include "hal/cpu_hal.h"
+#define get_cpu_cycle_count() cpu_hal_get_cycle_count()
+#elif defined(ARDUINO_ARCH_ESP8266) || defined(ARDUINO_ARCH_ESP32) || defined(IDF_VER)
 extern "C" uint32_t xthal_get_ccount();
-#  define get_cpu_cycle_count() xthal_get_ccount()
-# endif
+#define get_cpu_cycle_count() xthal_get_ccount()
+#endif
 #endif
 
 #if defined(ARDUINO_ARCH_ESP8266) || defined(CONFIG_IDF_TARGET_ESP8266)
-extern unsigned _tc_ccnt;   /* cycle counter (at delay start) */
-extern bool _tc_actv;       /* is time critical section active? */
+extern unsigned _tc_ccnt; /* cycle counter (at delay start) */
+extern bool _tc_actv;     /* is time critical section active? */
 
-# ifndef ARDUINO
-#  define noInterrupts() portDISABLE_INTERRUPTS()
-#  define interrupts() portENABLE_INTERRUPTS()
-# endif
+#ifndef ARDUINO
+#define noInterrupts() portDISABLE_INTERRUPTS()
+#define interrupts() portENABLE_INTERRUPTS()
+#endif
 
 /*
  * If appropriately configured the cycle counter state is saved at the entry
  * point for a purpose of accurate timings calculation.
  */
-# if CONFIG_BITBANG_DELAY_CCOUNT
-#  define timeCriticalEnter() \
-    _tc_actv = true; \
-    noInterrupts(); \
+#if CONFIG_BITBANG_DELAY_CCOUNT
+#define timeCriticalEnter() \
+    _tc_actv = true;        \
+    noInterrupts();         \
     _tc_ccnt = get_cpu_cycle_count()
 
-#  define timeCriticalExit() \
-    interrupts(); \
+#define timeCriticalExit() \
+    interrupts();          \
     _tc_actv = false
-# else
-#  define timeCriticalEnter() noInterrupts()
-#  define timeCriticalExit() interrupts()
-# endif
+#else
+#define timeCriticalEnter() noInterrupts()
+#define timeCriticalExit() interrupts()
+#endif
 #elif defined(ARDUINO_ARCH_ESP32) || defined(IDF_VER)
-typedef struct {
-    unsigned int_lev;       /* saved interrupt level */
-# if CONFIG_BITBANG_DELAY_CCOUNT
-    unsigned ccnt;          /* cycle counter (at delay start) */
-    bool actv;              /* is time critical section active? */
-# endif
+typedef struct
+{
+    unsigned int_lev; /* saved interrupt level */
+#if CONFIG_BITBANG_DELAY_CCOUNT
+    unsigned ccnt;    /* cycle counter (at delay start) */
+    bool actv;        /* is time critical section active? */
+#endif
 } tc_t;
 extern tc_t _tc[portNUM_PROCESSORS];
 
@@ -78,48 +79,49 @@ extern tc_t _tc[portNUM_PROCESSORS];
  * If appropriately configured the cycle counter state is saved at the entry
  * point for a purpose of accurate timings calculation.
  */
-# if CONFIG_BITBANG_DELAY_CCOUNT
-#  define timeCriticalEnter() \
-    _tc[xPortGetCoreID()].actv = true; \
+#if CONFIG_BITBANG_DELAY_CCOUNT
+#define timeCriticalEnter()                                            \
+    _tc[xPortGetCoreID()].actv = true;                                 \
     _tc[xPortGetCoreID()].int_lev = portSET_INTERRUPT_MASK_FROM_ISR(); \
     _tc[xPortGetCoreID()].ccnt = get_cpu_cycle_count()
 
-#  define timeCriticalExit() \
+#define timeCriticalExit()                                            \
     portCLEAR_INTERRUPT_MASK_FROM_ISR(_tc[xPortGetCoreID()].int_lev); \
     _tc[xPortGetCoreID()].actv = false
-# else
-#  define timeCriticalEnter() \
+#else
+#define timeCriticalEnter() \
     _tc[xPortGetCoreID()].int_lev = portSET_INTERRUPT_MASK_FROM_ISR()
 
-#  define timeCriticalExit() \
+#define timeCriticalExit() \
     portCLEAR_INTERRUPT_MASK_FROM_ISR(_tc[xPortGetCoreID()].int_lev)
-# endif
-#elif defined(ARDUINO)
-# define timeCriticalEnter() noInterrupts()
-# define timeCriticalExit() interrupts()
-#elif defined(__MBED__)
-# define timeCriticalEnter() __disable_irq()
-# define timeCriticalExit() __enable_irq()
+#endif
 #elif defined(PICO_BUILD)
-# include "hardware/sync.h"
+#include "hardware/sync.h"
 
 #define portNUM_PROCESSORS 2
-typedef struct {
-    uint32_t int_lev;       /* saved interrupt level */
+typedef struct
+{
+    uint32_t int_lev; /* saved interrupt level */
 } tc_t;
 extern tc_t _tc[portNUM_PROCESSORS];
 
-# define timeCriticalEnter() \
+#define timeCriticalEnter() \
     _tc[get_core_num()].int_lev = save_and_disable_interrupts()
 
-# define timeCriticalExit() \
+#define timeCriticalExit() \
     restore_interrupts(_tc[get_core_num()].int_lev)
+#elif defined(ARDUINO)
+#define timeCriticalEnter() noInterrupts()
+#define timeCriticalExit() interrupts()
+#elif defined(__MBED__)
+#define timeCriticalEnter() __disable_irq()
+#define timeCriticalExit() __enable_irq()
 #else
-# ifndef __TEST__
-#  warning "Time critical API unsupported for the target platform. Disabled."
-# endif
-# define timeCriticalEnter()
-# define timeCriticalExit()
+#ifndef __TEST__
+#warning "Time critical API unsupported for the target platform. Disabled."
+#endif
+#define timeCriticalEnter()
+#define timeCriticalExit()
 #endif
 
 /*
@@ -128,9 +130,10 @@ extern tc_t _tc[portNUM_PROCESSORS];
  * into IRAM.
  */
 #if defined(ARDUINO_ARCH_ESP8266) || defined(ARDUINO_ARCH_ESP32) || defined(IDF_VER)
-# define TIME_CRITICAL IRAM_ATTR
+#define TIME_CRITICAL IRAM_ATTR
 #else
-# define TIME_CRITICAL
+#define TIME_CRITICAL
 #endif
 
 #endif /* __OWNG_PLATFORM_TIME_CRITICAL__ */
+
